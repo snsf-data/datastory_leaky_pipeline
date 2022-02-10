@@ -106,7 +106,7 @@ bfs_data <- bfs_data %>%
                                                "Professor/innen")))
 
 # Decide on colors for research area: (SSH orange - MINT blue - LS violet)
-research_area_colors <- get_snsf_scheme()
+research_area_colors <- get_datastory_scheme()
 
 # compute proportion of f/m applicants by FI and research area
 leaky_pipeline_summary <- career_pf_data %>% 
@@ -669,6 +669,7 @@ Die Leaky Pipeline ist also auch bei den Förderinstrumenten des SNF ausgeprägt
 ### Serie zum Gender Monitoring des SNF
 
 Der SNF analysiert systematisch die Anteile der Frauen und Männer in seinen Förderinstrumenten. Mit Hilfe dieses Gender Monitorings wollen wir unsere Auswahlverfahren und unser Angebot so weiterentwickeln, dass Frauen möglichst gleiche Chancen haben. In einer kleinen Serie stellen wir ausgewählte Daten vor und beleuchten unterschiedliche Aspekte. 
-Teil 1: So schneiden Frauen in der Projektförderung ab ((Link auf diese Datengeschichte))
+
+<a class="button-blue" href="https://data.snf.ch/stories/frauen-unterrepraesentiert-oder-unterfinanziert-de.html" target="_blank">Teil 1: So schneiden Frauen in der Projektförderung ab</a>
 
 Daten, Text und Code dieser Datengeschichte sind auf <a href="https://github.com/snsf-data/datastory_leaky_pipeline" target="_blank">Github</a> verfügbar und auf <a href="https://doi.org/10.46446/datastory.leaky-pipeline" target="_blank">Zenodo</a> archiviert. DOI: 10.46446/datastory.leaky-pipeline

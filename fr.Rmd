@@ -117,7 +117,7 @@ bfs_data <- bfs_data %>%
                                   "Professeur·es"))
 
 # Decide on colors for research area: (SSH orange - MINT blue - LS violet)
-research_area_colors <- get_snsf_scheme()
+research_area_colors <- get_datastory_scheme()
 
 # compute proportion of f/m applicants by FI and research area
 leaky_pipeline_summary <- career_pf_data %>% 
@@ -680,6 +680,8 @@ Il n’y a donc bien un leaky pipeline même dans les instruments d’encouragem
 
 ### Une série sur le gender monitoring au FNS
 
-Le FNS analyse systématiquement la proportion de femmes et d’hommes dans ses instruments d’encouragement. Au moyen de ce gender monitoring, nous entendons développer nos méthodes de sélection et notre offre afin de donner aux femmes des chances égales, dans la mesure du possible. Une sélection de données et différents aspects de cette thématique sont mis en lumière dans une petite série. Partie 1: La place des femmes dans l’encouragement de projets FNS ((Lien vers ce récit de données))
+Le FNS analyse systématiquement la proportion de femmes et d’hommes dans ses instruments d’encouragement. Au moyen de ce gender monitoring, nous entendons développer nos méthodes de sélection et notre offre afin de donner aux femmes des chances égales, dans la mesure du possible. Une sélection de données et différents aspects de cette thématique sont mis en lumière dans une petite série.
+
+<a class="button-blue" href="https://data.snf.ch/stories/femmes-sous-representees-ou-sous-financees-fr.html" target="_blank">Partie 1: La place des femmes dans l’encouragement de projets FNS</a>
 
 Les données, le texte et le code de ce récit de données sont disponibles sur <a href="https://github.com/snsf-data/datastory_leaky_pipeline" target="_blank">Github</a> et archivés sur <a href="https://doi.org/10.46446/datastory.leaky-pipeline" target="_blank">Zenodo</a>. DOI : 10.46446/datastory.leaky-pipeline

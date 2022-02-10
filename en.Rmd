@@ -680,6 +680,8 @@ These figures indicate clearly that the SNSF is also confronted with a leaky pip
 
 ### SNSF series on gender monitoring
 
-The SNSF regularly analyses the proportion of female and male applicants to its funding schemes. With the help of this gender monitoring, we wish to further develop our selection procedures and our funding schemes so that opportunities for women are as equal as possible. In a short series, we present selected data and highlight specific aspects. Part 1: How women fare in project funding ((link to this data story))
+The SNSF regularly analyses the proportion of female and male applicants to its funding schemes. With the help of this gender monitoring, we wish to further develop our selection procedures and our funding schemes so that opportunities for women are as equal as possible. In a short series, we present selected data and highlight specific aspects. 
+
+<a class="button-blue" href="https://data.snf.ch/stories/women-underrepresented-or-underfunded-en.html" target="_blank">Part 1: How women fare in project funding</a>
 
 The data, text and code associated with this data story are available on <a href="https://github.com/snsf-data/datastory_leaky_pipeline" target="_blank">Github</a> and archived on <a href="https://doi.org/10.46446/datastory.leaky-pipeline" target="_blank">Zenodo</a>. DOI: 10.46446/datastory.leaky-pipeline
