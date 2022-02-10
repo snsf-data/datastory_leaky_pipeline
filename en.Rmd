@@ -1,0 +1,685 @@
+---
+params: 
+  title: ""
+  publication_date: ""
+  doi: ""
+output: 
+  html_document:
+    anchor_sections: false
+    theme: null
+    highlight: null
+    mathjax: null
+    css: ["style.css", "https://fonts.googleapis.com/css?family=Source+Sans+Pro:400,700&display=swap"]
+    self_contained: true
+title: "`r params$title`"
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r general-setup, include=FALSE}
+## This file contains the GERMAN version of the data story
+
+# Set general chunk options
+knitr::opts_chunk$set(echo = FALSE, fig.showtext = TRUE, fig.retina = 3, 
+                      fig.align = "center", warning = FALSE, message = FALSE)
+
+# Install pacman package if needed
+if (!require("pacman")) {
+  install.packages("pacman")
+  library(pacman)
+}
+
+# Install snf.datastory package if not available, otherwise load it
+if (!require("snf.datastory")) {
+  if (!require("devtools")) {
+    install.packages("devtools")
+    library(devtools)
+  }
+  install_github("snsf-data/snf.datastory")
+  library(snf.datastory)
+}
+
+# Load packages
+p_load(tidyverse,
+       lubridate,
+       readxl, 
+       scales, 
+       conflicted, 
+       jsonlite,
+       here, 
+       ggiraph)
+
+# Conflict preferences
+conflict_prefer("filter", "dplyr")
+conflict_prefer("get_datastory_theme", "snf.datastory")
+conflict_prefer("get_datastory_scheme", "snf.datastory")
+
+# Increase showtext package font resolution
+showtext_opts(dpi = 320)
+
+# Set the locale for date formatting (Windows)
+Sys.setlocale("LC_TIME")
+
+# Create function to print number with local language-specific format 
+print_num <- function(x) snf.datastory::print_num(x, lang = "de")
+
+# Knitr hook for local formatting of printed numbers
+knitr::knit_hooks$set(
+  inline <- function(x) {
+    if (!is.numeric(x)) {
+      x
+    } else {
+      print_num(x)
+    }
+  }
+)
+
+
+```
+
+```{r print-header-infos, results='asis'}
+# Add publication date to header
+cat(format(as_datetime(params$publication_date), "%d.%m.%Y"))
+```
+
+```{r story-specific-setup, include=FALSE, message=FALSE}
+# Set story-specific variables etc. here
+
+# Load Career PF data
+career_pf_data <- read_csv(here("input/career_pf_data.csv"))
+
+# reorder factors for plotting:
+career_pf_data <- career_pf_data %>% 
+  mutate(fi = factor(fi, levels = c("Doc.CH", "Doc.Mobility",
+                           "Early Postdoc.Mobility", "Postdoc.Mobility",
+                           "PRIMA",
+                           "Ambizione",  "Eccellenza/ SNSF Professorships",
+                           "Project funding")))
+# bfs data for 2020:
+bfs_data <- read_delim("input/bfs_data.csv", 
+    delim = ";", escape_double = FALSE, trim_ws = TRUE)
+
+bfs_data <- bfs_data %>% 
+         mutate(Personalkategorie = factor(Personalkategorie, 
+                                    levels = c("Assistierende und Doktorierende",
+                                               "Wissenschaftliche Mitarbeitende",
+                                               "Übrige Dozierende",
+                                               "Professor/innen")),
+                Personalkategorie = recode_factor(Personalkategorie, 
+                                "Assistierende und Doktorierende" = 
+                                  "Teaching assistants and doctoral (PhD) candidates",
+                                "Wissenschaftliche Mitarbeitende" = 
+                                  "Scientific staff",
+                                "Übrige Dozierende" = 
+                                  "Other lecturers",
+                                "Professor/innen" = 
+                                  "Professors"))
+
+# Decide on colors for research area: (SSH orange - MINT blue - LS violet)
+research_area_colors <- get_datastory_scheme()
+
+# compute proportion of f/m applicants by FI and research area
+leaky_pipeline_summary <- career_pf_data %>% 
+  # exclude PRIMA, which is for women only
+  filter(!fi == "PRIMA") %>%
+  # subset approved applications
+  filter(IsApproved == 1) %>%
+  group_by(fi, research_area, ResponsibleApplicantGender) %>%
+  summarise(n = n())  %>%
+  mutate(prop = n / sum(n))
+
+leaky_pipeline_summary_bfs <- bfs_data %>% 
+  filter(!(Geschlecht == "Total")) %>% 
+  group_by(Personalkategorie, research_area, Geschlecht)  %>%
+  summarise(TotalAmount = sum(Amount, na.rm = TRUE)) %>% 
+  mutate(prop = TotalAmount / sum(TotalAmount))
+
+# function to create a leaky pipeline plot per research area
+plot_leaky_pipeline <- function(division = "SSH", y_max = 1,
+                                title = NULL) {
+  div <- case_when(division == "SSH" ~ "SSH",
+                   division == "MINT" ~ "MINT",
+                   division == "LS" ~ "LS")
+  leaky_pipeline_summary <-
+    leaky_pipeline_summary %>% 
+    mutate(div = div)
+  p <- leaky_pipeline_summary %>% 
+    filter(research_area == division) %>% 
+    ggplot(aes(x = fi, y = prop, color = ResponsibleApplicantGender, 
+               group = ResponsibleApplicantGender,
+               # Define tooltip text for ggiraph
+               tooltip = paste0("Research area: ", div, "<br>",
+                                "FI: ", fi, "<br>", 
+                                "Gender: ", ResponsibleApplicantGender, "<br>", 
+                                "Number: ", n, "<br>", 
+                                "Proportion: ", paste0(round(prop*100, 1), "%"), "<br>"), 
+               # Highlight all of the points with the same color when hovering
+               # over it (ggiraph)
+               data_id = ResponsibleApplicantGender)) +
+    geom_point_interactive(shape = 16, size = 3) + # , 
+                           # color = "white") + 
+    get_datastory_theme(tick_axis = c("x", "y"), 
+                        remove_plot_margin = TRUE) + 
+    guides(fill = guide_legend(nrow = 1)) +
+    # geom_point(size = 2) + 
+    geom_line(linetype = "dashed") +
+    labs(title = title, x = NULL, y = NULL) +
+    # add line breaks to long labels with 2 words
+    scale_x_discrete(labels = function(x) {
+      sub("\\s", "\n", x)
+    }) +
+    scale_y_continuous(labels = scales::label_percent(accuracy = 1),
+                       limits = c(0, y_max),
+                       breaks = seq(0, 1, by = 0.1)) +
+    get_datastory_theme() +
+    scale_colour_manual(values = get_datastory_scheme(),
+                        labels = c("Female", "Male")) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          legend.background = element_rect(color = "transparent",
+                                           fill = "transparent"),
+          legend.position = c(0.7, 0.95), legend.direction = "horizontal") 
+  
+  return(p)
+}
+
+plot_leaky_pipeline_bfs <- function(division = "SSH", y_max = 1,
+                                title = NULL) {
+  div <- case_when(division == "SSH" ~ "SSH",
+                   division == "MINT" ~ "MINT",
+                   division == "LS" ~ "LS")
+  leaky_pipeline_summary_bfs <-
+    leaky_pipeline_summary_bfs %>% 
+    mutate(div = div,
+           Geschlecht = case_when(Geschlecht == "Mann" ~ "m",
+                                  Geschlecht == "Frau" ~ "f"))
+  p <- leaky_pipeline_summary_bfs %>% 
+    filter(research_area == division) %>% 
+    ggplot(aes(x = Personalkategorie, y = prop, color = Geschlecht, 
+               group = Geschlecht,
+               # Define tooltip text for ggiraph
+               tooltip = paste0("Research area: ", div, "<br>",
+                                "Category: ", Personalkategorie, "<br>", 
+                                "Gender: ", Geschlecht, "<br>", 
+                                "Number: ", TotalAmount, "<br>", 
+                                "Proportion: ", paste0(round(prop*100, 1), "%"), "<br>"), 
+               # Highlight all of the points with the same color when hovering
+               # over it (ggiraph)
+               data_id = Geschlecht)) +
+    geom_point_interactive(shape = 16, size = 3) + # , 
+                           # color = "white") + 
+    get_datastory_theme(tick_axis = c("x", "y"), 
+                        remove_plot_margin = TRUE) + 
+    guides(fill = guide_legend(nrow = 1)) +
+    # geom_point(size = 2) + 
+    geom_line(linetype = "dashed") +
+    labs(title = title, x = NULL, y = NULL) +
+    # add line breaks to long labels with 2 words
+    scale_x_discrete(labels = function(x) {
+      str_wrap(x, 20)
+    }) +
+    scale_y_continuous(labels = scales::label_percent(accuracy = 1),
+                       limits = c(0, y_max),
+                       breaks = seq(0, 1, by = 0.1)) +
+    get_datastory_theme()+
+    scale_colour_manual(values = get_datastory_scheme(),
+                        labels = c("Female", "Male")) +
+    theme(#axis.text.x = element_text(hjust = 1),
+          legend.background = element_rect(color = "transparent",
+                                           fill = "transparent"),
+          legend.position = c(0.7, 0.95), legend.direction = "horizontal") 
+  
+  return(p)
+}
+
+# reporting year start and end
+reporting_year_start <- 2018
+reporting_year_end <- 2020
+
+division_ssh <- "SSH"
+division_ls <- "LS"
+division_mint <- "MINT"
+
+```
+
+<!-- Short lead (2-3 sentences) in bold -->
+
+__In Switzerland, more women than men study at universities. Yet women professors are in the minority. This imbalance is also reflected in the grant applications submitted to the SNSF.__
+
+The decline in the proportion of women at progressive levels of the academic career ladder is sometimes described as “a leaky pipeline”. Data from the Federal Statistical Office (FSO) from 2020 show a distinctly leaky pipeline at universities in Switzerland and across all subject areas. In the social sciences and humanities (SSH), as well as in the life sciences (LS), women make up a majority both at the start and during their studies. But women hold only 30% (SSH) and 23% (LS) of professorships. In science, technology, engineering and mathematics (MINT), the situation is different. Here, female students are in the minority (36%). And the proportion of female professors is only half as high (18%). 
+
+<div class="plot-box">
+<div class="plot-title">Proportion of women and men in SSH at Swiss universities and institutes of technology (2020)</div>
+
+```{r}
+y_max_ssh_bfs <- max(leaky_pipeline_summary_bfs$prop + 0.05)
+
+leaky_pipeline_ssh_bfs <- plot_leaky_pipeline_bfs(division = division_ssh, y_max = y_max_ssh_bfs)
+
+girafe(ggobj = leaky_pipeline_ssh_bfs, 
+       height_svg = 4, 
+       options = list(
+         opts_toolbar(saveaspng = FALSE),
+         opts_hover(css = "fill:#ff0000;stroke:#000000;"),
+         opts_tooltip(
+           css = get_ggiraph_tooltip_css(),
+           opacity = 0.6,
+           delay_mouseover = 0,
+           delay_mouseout = 0
+         )
+       ))
+```
+<div class="caption">
+<a href="https://www.bfs.admin.ch/bfs/en/home/statistics/education-science/educational-staff/tertiary-higher-institutions/universities.assetdetail.17504434.html" target="_blank">FSO data</a> on the proportion of women and men in SSH research for different staff categories at Swiss tier-one universities in 2020.
+</div>
+</div>
+
+
+<div class="plot-box">
+<div class="plot-title">Proportion of women and men in LS at Swiss universities and institutes of technology (2020)</div>
+
+```{r}
+y_max_ls_bfs <- max(leaky_pipeline_summary_bfs$prop + 0.05)
+
+leaky_pipeline_ls_bfs <- plot_leaky_pipeline_bfs(division = division_ls, y_max = y_max_ls_bfs)
+
+girafe(ggobj = leaky_pipeline_ls_bfs, 
+       height_svg = 4, 
+       options = list(
+         opts_toolbar(saveaspng = FALSE),
+         opts_hover(css = "fill:#ff0000;stroke:#000000;"),
+         opts_tooltip(
+           css = get_ggiraph_tooltip_css(),
+           opacity = 0.6,
+           delay_mouseover = 0,
+           delay_mouseout = 0
+         )
+       ))
+```
+<div class="caption">
+<a href="https://www.bfs.admin.ch/bfs/en/home/statistics/education-science/educational-staff/tertiary-higher-institutions/universities.assetdetail.17504434.html" target="_blank">FSO data</a> on the proportion of women and men in MINT research for different staff categories at Swiss tier-one universities in 2020.
+</div>
+</div>
+
+
+<div class="plot-box">
+<div class="plot-title">Proportion of women and men in MINT at Swiss universities and institutes of technology (2020)</div>
+
+```{r}
+y_max_mint_bfs <- max(leaky_pipeline_summary_bfs$prop + 0.05)
+
+leaky_pipeline_mint_bfs <- plot_leaky_pipeline_bfs(division = division_mint, 
+                                                   y_max = y_max_mint_bfs)
+
+girafe(ggobj = leaky_pipeline_mint_bfs, 
+       height_svg = 4, 
+       options = list(
+         opts_toolbar(saveaspng = FALSE),
+         opts_hover(css = "fill:#ff0000;stroke:#000000;"),
+         opts_tooltip(
+           css = get_ggiraph_tooltip_css(),
+           opacity = 0.6,
+           delay_mouseover = 0,
+           delay_mouseout = 0
+         )
+       ))
+```
+<div class="caption">
+<a href="https://www.bfs.admin.ch/bfs/en/home/statistics/education-science/educational-staff/tertiary-higher-institutions/universities.assetdetail.17504434.html" target="_blank">FSO data</a> on the proportion of women and men in MINT research for different staff categories at Swiss tier-one universities in 2020.
+</div>
+</div>
+
+
+### Applications submitted to the SNSF
+
+The same picture is reflected in data on applications received by the SNSF from 2018 to 2020. The data do not relate directly to researchers’ career stage but rather to the SNSF’s funding schemes, which allows us to estimate the stage researchers are at. In SSH, the proportion of women remains high across different career stages. Nevertheless, a clear imbalance can also be seen in this area. While over 60% of applicants under the Doc.CH scheme (PhD level) are female, 40% of applicants under the Ambizione scheme (young, nearly independent researchers) are women. Under the project funding scheme (experienced researchers), the proportion of women is 34%. 
+
+
+<div class="plot-box">
+<div class="plot-title">Proportion of female and male applicants in SSH (2018–2020)</div>
+
+```{r, message=FALSE}
+# Leaky pipeline in Social Sciences and Humanities (SSH)
+
+y_max_ssh <- max(leaky_pipeline_summary$prop + 0.05)
+
+leaky_pipeline_ssh <- plot_leaky_pipeline(division = division_ssh, 
+                                          y_max = y_max_ssh)
+
+girafe(ggobj = leaky_pipeline_ssh, 
+       height_svg = 4, 
+       options = list(
+         opts_toolbar(saveaspng = FALSE),
+         opts_hover(css = "fill:#ff0000;stroke:#000000;"),
+         opts_tooltip(
+           css = get_ggiraph_tooltip_css(),
+           opacity = 0.6,
+           delay_mouseover = 0,
+           delay_mouseout = 0
+         )
+       ))
+
+```
+<div class="caption">
+<a href="https://github.com/snsf-data/datastory_leaky_pipeline/tree/main/input" target="_blank">Proportion of female and male applicants in SSH research for the SNSF’s various funding schemes, `r reporting_year_start`-`r reporting_year_end`</a>. The Doc.CH scheme is offered only in SSH. The Doc.Mobility scheme was discontinued in September 2020 (last submission date, 1 September 2020).
+</div>
+</div>
+
+
+There is also a clear difference between the proportion of male and female applicants in LS. Women constitute the majority of applicants (60%) under the Doc.Mobility funding scheme. Under the Ambizione scheme, as with SSH, they represent 40% of applicants and under the project funding scheme only 26%.
+
+<div class="plot-box">
+<div class="plot-title">Proportion of female and male applicants in LS (2018–2020)</div>
+
+```{r}
+# Leaky pipeline in Life Sciences (LS)
+y_max_ls <- max(leaky_pipeline_summary$prop + 0.05)
+
+leaky_pipeline_ls <- plot_leaky_pipeline(division = division_ls, 
+                                         y_max = y_max_ls)
+
+girafe(ggobj = leaky_pipeline_ls, 
+       height_svg = 4, 
+       options = list(
+         opts_toolbar(saveaspng = FALSE),
+         opts_hover(css = "fill:#ff0000;stroke:#000000;"),
+         opts_tooltip(
+           css = get_ggiraph_tooltip_css(),
+           opacity = 0.6,
+           delay_mouseover = 0,
+           delay_mouseout = 0
+         )
+       ))
+```
+<div class="caption">
+<a href="https://github.com/snsf-data/datastory_leaky_pipeline/tree/main/input" target="_blank">Proportion of female and male applicants in LS research for the SNSF’s various funding schemes, `r reporting_year_start`-`r reporting_year_end`</a>. Doc.Mobility was discontinued in September 2020 (last submission date, 1 September 2020).
+</div>
+</div>
+
+
+```{r calculations, message=FALSE}
+small_fem_perc_mint <- round(100 * 
+  career_pf_data %>% 
+  # exclude PRIMA, which is for women only
+  filter(!fi == "PRIMA") %>%
+  # subset approved applications
+  filter(IsApproved == 1) %>%
+  group_by(fi, research_area, ResponsibleApplicantGender) %>%
+  summarise(n = n())  %>%
+  mutate(prop = n / sum(n)) %>% 
+  filter(fi == "Project funding", 
+         ResponsibleApplicantGender == "f", 
+         research_area == "MINT") %>% 
+  pull(prop), 2)
+```
+
+MINT data tell a different story. Here, the proportion of women decreases across career stages as well, but less sharply than in SSH and LS. What is particularly striking in MINT is that even under the Doc.Mobility scheme, only 27% of applicants are women. This figure remains relatively constant and drops to 15% only for project funding.
+
+
+<div class="plot-box">
+<div class="plot-title">Proportion of female and male applicants in MINT (2018–2020)</div>
+
+```{r}
+# Leaky pipeline in MINT
+
+y_max_mint <- max(leaky_pipeline_summary$prop + 0.05)
+
+leaky_pipeline_mint <- plot_leaky_pipeline(division = division_mint, y_max = y_max_mint)
+
+girafe(ggobj = leaky_pipeline_mint, 
+       height_svg = 4, 
+       options = list(
+         opts_toolbar(saveaspng = FALSE),
+         opts_hover(css = "fill:#ff0000;stroke:#000000;"),
+         opts_tooltip(
+           css = get_ggiraph_tooltip_css(),
+           opacity = 0.6,
+           delay_mouseover = 0,
+           delay_mouseout = 0
+         )
+       ))
+```
+<div class="caption">
+<a href="https://github.com/snsf-data/datastory_leaky_pipeline/tree/main/input" target="_blank">The proportion of female and male applicants in MINT research for the SNSF’s various funding schemes, `r reporting_year_start`-`r reporting_year_end`</a>. Doc.Mobility was discontinued in September 2020 (last application date, 1 September 2020).
+</div>
+</div>
+
+
+```{r, eval=FALSE, include=FALSE}
+# import the dataset 
+# https://www.bfs.admin.ch/bfs/de/home/statistiken/bildung-wissenschaft/technologie/indikatorsystem/zugang-indikatoren/w-t-input/frauen-und-wissenschaft.assetdetail.14941518.html
+# rerun in case of new data (UPDATE THE MASTER LINK!!)
+# download.file("https://www.bfs.admin.ch/bfsstatic/dam/assets/19384477/master",
+#               "input/women_research.xlsx")
+
+women_research_data <- read_excel(here("input", "women_research.xlsx"),
+                                  sheet = "Tablong 10 Stufe", range = "B44:L72")
+
+# clean the data
+# this code has to be thoroughly checked in case of new data
+women_research_data_cleaned <- women_research_data %>%
+  janitor::clean_names() %>%
+  # get rid of the empty rows in between
+  # filter out every fifth row (the one with the totals)
+  filter(row_number() %% 5 != 0,
+         # filter out the completely empty rows
+         studierende > 0) %>%
+  # add the year
+  mutate(year = rep(c(2020,2019,2018,2017,2016,2015), times=c(3,3,3,3,3,3))) %>%
+  # give shorter and English names to the columns
+  rename(gender = x2020,
+         Baccalaureate = gymnasiale_maturitat_berufsmaturitat_und_fachmaturitat,
+         Admissions = eintritt_in_eine_hochschule,
+         Students = studierende,
+         Bachelors = bachelors,
+         Masters = masters,
+         PhDs = doktortitel,
+         "Researchers D" = forscher_innen_stufe_d,
+         "Researchers C" = forscher_innen_stufe_c,
+         "Researchers B" = forscher_innen_stufe_b,
+         "Researchers A" = forscher_innen_stufe_a) %>%
+  # bring it into long format
+  pivot_longer(cols = c(Baccalaureate, Admissions, Students, Bachelors, Masters,
+                        PhDs, "Researchers D", "Researchers C", "Researchers B",
+                        "Researchers A"),
+               names_to = "category",
+               values_to = "percentage") %>%
+  # transform category to be a factor (for it to appear in the right order
+  # afterwards)
+  mutate(category = factor(category, levels = c(
+    "Baccalaureate", "Admissions", "Students",
+    "Bachelors", "Masters", "PhDs", "Researchers D",
+    "Researchers C", "Researchers B", "Researchers A")),
+    percentage = as.numeric(percentage),
+    gender = case_when(
+      gender ==  "Frauen" ~ "female",
+      gender ==  "Männer" ~ "male",
+      gender == "Total" ~ "total"),
+    # get the same order of the two genders as in the previous part
+    gender = factor(gender, levels = 
+                      c("male", "female")))
+
+leaky_pipeline_bfs_full <- women_research_data_cleaned %>%
+  filter(gender != "total",
+         year == 2020, 
+         category %in% c("Masters", "PhDs",
+                         "Researchers D",
+                         "Researchers C",
+                         "Researchers B",
+                         "Researchers A")) %>% #, year == params$year_women_researcher) %>%
+  mutate(category = fct_recode(category,
+                               `Junior Mitarbeiter/innen, Assistenten und Doctorierende Studenten` = 
+                                 "Researchers D",
+                               `Wissenschaftliche Mitarbeiter/innen und Kollaboratoren` =
+                                 "Researchers C",
+                               Dozenten = "Researchers B",
+                               `Professor/innen` = "Researchers A")) %>% 
+  ggplot(aes(x = category,
+             y = percentage,
+             group = gender,
+             color = gender,
+             # Define tooltip text for ggiraph
+             tooltip = paste0("Personalkat.: ", category, "<br>",
+                              "Geschlecht: ", gender, "<br>", 
+                              "Anteil: ", paste0(round(percentage*100, 1), "%"), "<br>"), 
+             # Highlight all of the points with the same color when hovering
+             # over it (ggiraph)
+             data_id = gender)) +
+  geom_line(linetype = "dashed") +
+  geom_point_interactive(shape = 16, size = 3) +  
+  # geom_hline(yintercept = 0.5) +
+  scale_y_continuous(breaks = seq(0, 1, 0.1),
+                     limits = c(0.2, 0.8),
+                     labels = scales::percent_format(accuracy = 1)) +
+    # add line breaks to long labels with 2 words
+    scale_x_discrete(labels = function(x) {
+      str_wrap(x, 10)
+    }) +
+  labs(x = "",
+       y = "",
+       title = str_wrap("BFS Daten: Anteil an weiblichen und männlichen Akademiker in den unterschiedlichen Personalkategorien (2020)", width = 70)) +
+  get_datastory_theme()+
+  scale_colour_manual(values = get_datastory_scheme(),
+                      labels = c("Male", "Female")) 
+
+girafe(ggobj = leaky_pipeline_bfs_full, 
+       height_svg = 4, 
+       options = list(
+         opts_toolbar(saveaspng = FALSE),
+         opts_hover(css = "fill:#ff0000;stroke:#000000;"),
+         opts_tooltip(
+           css = get_ggiraph_tooltip_css(),
+           opacity = 0.6,
+           delay_mouseover = 0,
+           delay_mouseout = 0
+         )
+       ))
+```
+
+```{r, eval=FALSE, include=FALSE}
+# data for 2020:
+dat <- read_delim(here("input/px-x-1503040100_101_20211124-163234.csv"), 
+                  delim = ";", escape_double = FALSE, 
+                  locale = locale(encoding = "WINDOWS-1252"),
+                  trim_ws = TRUE)
+
+dat <- dat %>% 
+  rename(`n_diplomas` = `Abschlüsse der universitären Hochschulen`) %>% 
+  select(-c(Jahr, Hochschule))
+map <- openxlsx::read.xlsx(here("input/Leaky_Pipeline_2017-2018.xlsx"), 
+                           sheet = "UH_Personal_Total", startRow = 5, 
+                           fillMergedCells = T)
+
+map <- map %>% 
+  select(`SNF.Abteilung`, Fachrichtung) %>% 
+  distinct()
+
+summary_dat <- dat %>% 
+  group_by(Examensstufe, Fachrichtung, Geschlecht) %>% 
+  summarise(total_diploma = sum(n_diplomas, na.rm = TRUE))
+
+left_out <- anti_join(summary_dat, map, by = "Fachrichtung")
+left_out <- unique(left_out$Fachrichtung)
+
+# redifine those not within map:
+missing <- data.frame(SNF.Abteiling = c(rep("1", 3), rep("2", 2),
+                                        rep("1", 4), rep("2", 2),
+                                        rep("1", 3), "NZ",
+                                        rep("1", 3), "2",
+                                        rep("1", 3), "3",
+                                        "2", rep("1", 4),
+                                        "2", rep("1", 3)),
+                      Fachrichtung = left_out)
+names(missing) <- names(map)
+map <- rbind(map, missing)
+
+summary_dat_ra <- summary_dat %>% 
+  left_join(map, by = "Fachrichtung") %>% 
+  filter(!(SNF.Abteilung == "NZ")) %>% 
+  mutate(research_area = as.factor(case_when(SNF.Abteilung == "1" ~ "SSH",
+                                             SNF.Abteilung == "2" ~ "MINT",
+                                             SNF.Abteilung == "3" ~ "LS")),
+         research_area = factor(research_area, levels = c("SSH", "MINT", "LS"))) %>% 
+  group_by(research_area) %>% 
+  group_by(Examensstufe, research_area, Geschlecht)  %>%
+  summarise(TotalAmount = sum(total_diploma, na.rm = TRUE)) %>% 
+  mutate(prop = TotalAmount / sum(TotalAmount)) %>% 
+  rename(category = Examensstufe)
+  
+
+leaky_pipeline_summary_bfs <-
+  leaky_pipeline_summary_bfs %>% 
+  rename(category = Personalkategorie)
+
+all_dat <- rbind(leaky_pipeline_summary_bfs, summary_dat_ra)
+
+all_dat <- all_dat %>% 
+  filter(!(category == "Doktorat")) %>% 
+  mutate(category = factor(category, levels = c("Master",
+                                                # "Doktorat",
+                                                "Assistierende und Doktorierende",
+                                                "Wissenschaftliche Mitarbeitende",
+                                                "Übrige Dozierende",
+                                                "Professor/innen")))
+```
+
+```{r, eval=FALSE, include=FALSE}
+all_dat_plot <- all_dat %>% 
+  ggplot(aes(x = category,
+             y = prop,
+             group = Geschlecht,
+             color = Geschlecht,
+             # Define tooltip text for ggiraph
+             tooltip = paste0("Personalkat.: ", category, "<br>",
+                              "Geschlecht: ", Geschlecht, "<br>", 
+                              "Anzahl: ", TotalAmount, "<br>",
+                              "Anteil: ", paste0(round(prop*100, 1), "%"), "<br>"), 
+             # Highlight all of the points with the same color when hovering
+             # over it (ggiraph)
+             data_id = Geschlecht)) +
+  geom_line(linetype = "dashed") +
+  geom_point_interactive(shape = 16, size = 3) +  
+  # geom_hline(yintercept = 0.5) +
+  scale_y_continuous(breaks = seq(0, 1, 0.25),
+                     limits = c(0.15, 0.85),
+                     labels = scales::percent_format(accuracy = 1)) +
+    # add line breaks to long labels with 2 words
+    scale_x_discrete(labels = function(x) {
+      str_wrap(x, 10)
+    }) +
+  labs(x = "",
+       y = "",
+       title = str_wrap("BFS Daten: Anteil an weiblichen und männlichen Akademiker in den unterschiedlichen Akademischen Stufen (2020)", width = 70)) +
+  get_datastory_theme()+
+  scale_colour_manual(values = get_datastory_scheme(),
+                      labels = c("Female", "Male")) +
+  facet_wrap(~research_area, nrow = 3)
+
+```
+
+```{r, eval=FALSE, include=FALSE}
+girafe(ggobj = all_dat_plot, 
+       height_svg = 4, 
+       options = list(
+         opts_toolbar(saveaspng = FALSE),
+         opts_hover(css = "fill:#ff0000;stroke:#000000;"),
+         opts_tooltip(
+           css = get_ggiraph_tooltip_css(),
+           opacity = 0.6,
+           delay_mouseover = 0,
+           delay_mouseout = 0
+         )
+       ))
+```
+
+
+### Increasing the number of women
+
+These figures indicate clearly that the SNSF is also confronted with a leaky pipeline. The proportion of female applicants for funding is too low at later career stages. In the last few years, we have therefore introduced a series of measures to address the issue. They include, for example, additional financial benefits for parents and part-time work options in SNSF-funded projects. We are also explicitly promoting professorships for women. The impact of these measures is closely monitored and evaluated. Together with the measures taken by the universities, they should lead to more women pursuing a career in science.  
+
+
+### SNSF series on gender monitoring
+
+The SNSF regularly analyses the proportion of female and male applicants to its funding schemes. With the help of this gender monitoring, we wish to further develop our selection procedures and our funding schemes so that opportunities for women are as equal as possible. In a short series, we present selected data and highlight specific aspects. Part 1: How women fare in project funding ((link to this data story))
+
+The data, text and code associated with this data story are available on <a href="https://github.com/snsf-data/datastory_leaky_pipeline" target="_blank">Github</a> and archived on <a href="https://doi.org/10.46446/datastory.leaky-pipeline" target="_blank">Zenodo</a>. DOI: 10.46446/datastory.leaky-pipeline
