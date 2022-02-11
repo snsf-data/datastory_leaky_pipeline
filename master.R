@@ -52,7 +52,7 @@ feature_story <- FALSE
 # DOI of the story (optional)
 doi <- "10.46446/datastory.leaky-pipeline" 
 # URL to Github page (optional)
-github_url <- "https://github.com/snsf-data/leaky_pipeline" 
+github_url <- "https://github.com/snsf-data/datastory_leaky_pipeline" 
 # Put Tag IDs here. Only choose already existing tags. 
 tags_ids <- c(270, 60, 220, 80, 70)
 
